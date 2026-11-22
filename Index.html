@@ -4,8 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Bit Yaser | بيت ياسر</title>
+  
+  <!-- إعدادات PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#6C2BD9" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+
+  <!-- الخطوط ومكتبة Supabase -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     :root {
       --bg-dark: #0D0E15;
@@ -34,7 +43,7 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      padding-bottom: 80px;
+      padding-bottom: 85px;
       overflow-x: hidden;
     }
 
@@ -408,6 +417,64 @@
       direction: ltr;
     }
 
+    /* Developer Card */
+    .dev-card {
+      background: linear-gradient(145deg, #161824 0%, #1D1836 100%);
+      border: 1px solid rgba(108, 43, 217, 0.4);
+      border-radius: 18px;
+      padding: 20px;
+      margin-top: 22px;
+      text-align: center;
+    }
+
+    .dev-badge {
+      display: inline-block;
+      background: rgba(108, 43, 217, 0.2);
+      color: #C4B5FD;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 10px;
+      border: 1px solid rgba(108, 43, 217, 0.4);
+    }
+
+    .dev-name {
+      font-size: 17px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 4px;
+      direction: ltr;
+    }
+
+    .dev-bio {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    .dev-email-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--bg-dark);
+      color: var(--accent-gold);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 9px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      direction: ltr;
+      transition: background 0.2s;
+    }
+
+    .dev-email-btn:hover {
+      background: var(--bg-card-hover);
+    }
+
     /* Bottom Navigation */
     nav {
       position: fixed;
@@ -555,7 +622,7 @@
       </div>
     </section>
 
-    <!-- 4. شاشة الفريق والإحالات -->
+    <!-- 4. شاشة الفريق والمطور -->
     <section id="screen-team" class="screen">
       <div class="section-title">
         <span>فريقك وسجل العمليات</span>
@@ -571,6 +638,18 @@
         <span>آخر العمليات</span>
       </div>
       <div id="logsList"></div>
+
+      <!-- بطاقة التعريف بالمطور -->
+      <div class="dev-card">
+        <div class="dev-badge">عن المطور | Developer</div>
+        <div class="dev-name">Ismail Ahmed Ismail</div>
+        <div class="dev-bio">
+          مطور تطبيقات الويب التقدمية (PWA) والمنصات التفاعلية الرقمية. للتواصل والاستفسارات التقنية حول تطبيق <strong>Bit Yaser</strong>:
+        </div>
+        <a href="mailto:asmaylalrdy744@gmail.com" class="dev-email-btn">
+          ✉️ asmaylalrdy744@gmail.com
+        </a>
+      </div>
     </section>
   </main>
 
@@ -594,6 +673,22 @@
   </nav>
 
   <script>
+    // 1. تسجيل Service Worker لتفعيل التثبيت كتطبيق (PWA)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+
+    // 2. تهيئة Supabase (استبدل القيمتين ببيانات مشروعك)
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const supabaseClient = (SUPABASE_URL !== 'YOUR_SUPABASE_URL')
+      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
+
+    let currentUserId = null;
+
     // ثوابت المحاكاة
     const SESSION_DURATION_MS = 6 * 60 * 60 * 1000; // 6 ساعات
     const BASE_REWARD_PER_GH_PER_SEC = 0.000000001; // 1e-9 BY لكل GH/s في الثانية
@@ -608,7 +703,7 @@
 
     // الحالة الافتراضية للمستخدم
     let state = JSON.parse(localStorage.getItem('bitYaserState')) || {
-      balance: 0.00060000, // رصيد ترحيبي لتجربة المتجر
+      balance: 0.00060000,
       baseHashrate: 10.0,
       boostMultiplier: 1,
       boostEndTime: 0,
@@ -627,6 +722,70 @@
       localStorage.setItem('bitYaserState', JSON.stringify(state));
     }
 
+    // مزامنة الحالة مع السحابة (Supabase)
+    async function syncStateToCloud() {
+      saveState();
+      if (!supabaseClient || !currentUserId) return;
+
+      await supabaseClient
+        .from('bit_yaser_users')
+        .upsert({
+          user_id: currentUserId,
+          balance: state.balance,
+          base_hashrate: state.baseHashrate,
+          boost_multiplier: state.boostMultiplier,
+          boost_end_time: state.boostEndTime,
+          is_mining: state.isMining,
+          session_end_time: state.sessionEndTime,
+          last_tick_time: state.lastTickTime,
+          last_daily_bonus: state.lastDailyBonus,
+          last_spin_time: state.lastSpinTime,
+          ref_code: state.refCode,
+          logs: state.logs,
+          updated_at: new Date().toISOString()
+        });
+    }
+
+    // الدخول التلقائي السريع وجلب البيانات من السحابة
+    async function initCloudSync() {
+      if (!supabaseClient) return;
+      try {
+        let { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) {
+          const { data } = await supabaseClient.auth.signInAnonymously();
+          session = data?.session;
+        }
+
+        if (session?.user) {
+          currentUserId = session.user.id;
+          const { data } = await supabaseClient
+            .from('bit_yaser_users')
+            .select('*')
+            .eq('user_id', currentUserId)
+            .single();
+
+          if (data) {
+            state.balance = Number(data.balance);
+            state.baseHashrate = Number(data.base_hashrate);
+            state.boostMultiplier = data.boost_multiplier;
+            state.boostEndTime = Number(data.boost_end_time);
+            state.isMining = data.is_mining;
+            state.sessionEndTime = Number(data.session_end_time);
+            state.lastTickTime = Number(data.last_tick_time);
+            state.lastDailyBonus = Number(data.last_daily_bonus);
+            state.lastSpinTime = Number(data.last_spin_time);
+            state.refCode = data.ref_code || state.refCode;
+            state.logs = data.logs || state.logs;
+            processMiningTick();
+          } else {
+            await syncStateToCloud();
+          }
+        }
+      } catch (err) {
+        console.warn('Cloud sync offline mode:', err);
+      }
+    }
+
     function showToast(msg) {
       const toast = document.getElementById('toast');
       toast.textContent = msg;
@@ -641,7 +800,6 @@
       renderLogs();
     }
 
-    // حساب السرعة الفعلية
     function getEffectiveHashrate() {
       const now = Date.now();
       if (state.boostEndTime > now) {
@@ -652,7 +810,6 @@
       }
     }
 
-    // تحديث التعدين بناءً على الوقت الفعلي المنقضي (حتى لو كان التطبيق مغلقاً)
     function processMiningTick() {
       const now = Date.now();
       if (state.isMining) {
@@ -669,6 +826,7 @@
           state.isMining = false;
           addLog('اكتمال جلسة التعدين', 'تم الحفظ');
           showToast('انتهت جلسة التعدين! اضغط لبدء جلسة جديدة');
+          syncStateToCloud();
         }
       } else {
         state.lastTickTime = now;
@@ -677,7 +835,6 @@
       updateUI();
     }
 
-    // تشغيل جلسة التعدين
     function toggleMining() {
       const now = Date.now();
       if (state.isMining) {
@@ -689,11 +846,10 @@
       state.lastTickTime = now;
       addLog('بدء جلسة تعدين (6 ساعات)', 'نشط');
       showToast('تم تشغيل محطة بيت ياسر بنجاح!');
-      saveState();
+      syncStateToCloud();
       updateUI();
     }
 
-    // مضاعفة السرعة لمدة 15 دقيقة
     function activateBoost() {
       const now = Date.now();
       if (state.boostEndTime > now) {
@@ -704,11 +860,10 @@
       state.boostEndTime = now + (15 * 60 * 1000);
       addLog('تفعيل مضاعف السرعة 2x', '15 دقيقة');
       showToast('تم مضاعفة سرعة التعدين 2x لمدة 15 دقيقة 🚀');
-      saveState();
+      syncStateToCloud();
       updateUI();
     }
 
-    // مكافأة يومية
     function claimDailyBonus() {
       const now = Date.now();
       const oneDay = 24 * 60 * 60 * 1000;
@@ -721,11 +876,10 @@
       state.lastDailyBonus = now;
       addLog('المكافأة اليومية', `+${bonus.toFixed(8)} BY`);
       showToast(`مبروك! حصلت على ${bonus.toFixed(8)} BY 🎁`);
-      saveState();
+      syncStateToCloud();
       updateUI();
     }
 
-    // شراء ترقية من المتجر
     function buyUpgrade(id) {
       const item = UPGRADES.find(u => u.id === id);
       if (!item) return;
@@ -739,16 +893,15 @@
       state.baseHashrate += item.power;
       addLog(`شراء: ${item.name}`, `+${item.power} GH/s`);
       showToast(`تمت الترقية! زادت سرعتك بمقدار +${item.power} GH/s ⚡`);
-      saveState();
+      syncStateToCloud();
       updateUI();
     }
 
-    // عجلة الحظ
     let isSpinning = false;
     function spinWheel() {
       if (isSpinning) return;
       const now = Date.now();
-      const cooldown = 60 * 1000; // دقيقة واحدة للتجربة (يمكنك جعلها 12 ساعة)
+      const cooldown = 60 * 1000;
       if (now - state.lastSpinTime < cooldown) {
         showToast('انتظر دقيقة واحدة قبل اللفة القادمة ⏳');
         return;
@@ -767,18 +920,16 @@
         isSpinning = false;
         addLog('جائزة عجلة الحظ', `+${won.toFixed(8)} BY`);
         showToast(`ربحت ${won.toFixed(8)} BY من عجلة الحظ! 🎉`);
-        saveState();
+        syncStateToCloud();
         updateUI();
       }, 3100);
     }
 
-    // نسخ كود الدعوة
     function copyRefCode() {
       navigator.clipboard.writeText(state.refCode);
       showToast(`تم نسخ الكود: ${state.refCode}`);
     }
 
-    // التنقل بين الشاشات
     function switchScreen(screenName, btn) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(`screen-${screenName}`).classList.add('active');
@@ -787,7 +938,6 @@
       btn.classList.add('active');
     }
 
-    // تحديث الواجهة
     function updateUI() {
       const now = Date.now();
       const hashrate = getEffectiveHashrate();
@@ -855,9 +1005,11 @@
       `).join('');
     }
 
-    // تشغيل العداد كل ثانية
+    // تشغيل التطبيق والمزامنة السحابية
     setInterval(processMiningTick, 1000);
+    setInterval(syncStateToCloud, 15000);
     processMiningTick();
+    initCloudSync();
   </script>
 </body>
 </html>
